@@ -6,6 +6,7 @@ import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.osm.*;
+import org.openstreetmap.josm.data.osm.BBox;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
@@ -234,25 +235,113 @@ public class MergeAndFixAction extends JosmAction {
     
     /**
      * Calculates what percentage of the old building is covered by the new building.
+     * Uses a combination of bounding box overlap and node proximity.
      */
     private double calculateOverlapPercentage(Way newWay, Way oldWay) {
         try {
             // Calculate areas
+            double newArea = Geometry.computeArea(newWay);
             double oldArea = Geometry.computeArea(oldWay);
-            if (oldArea == 0) {
+            
+            if (oldArea == 0 || newArea == 0) {
+                System.out.println("    [DPWMapper] Zero area detected");
                 return 0;
             }
             
-            // Calculate intersection area using node overlap
-            double intersectionArea = calculateIntersectionArea(newWay, oldWay);
+            System.out.println("    [DPWMapper] New area: " + String.format("%.2f", newArea) + " sq m");
+            System.out.println("    [DPWMapper] Old area: " + String.format("%.2f", oldArea) + " sq m");
             
-            // Return percentage of old building covered by new building
-            return intersectionArea / oldArea;
+            // Get bounding boxes
+            BBox newBBox = newWay.getBBox();
+            BBox oldBBox = oldWay.getBBox();
+            
+            // Calculate bounding box intersection area
+            double bboxOverlap = calculateBBoxOverlap(newBBox, oldBBox, oldBBox);
+            System.out.println("    [DPWMapper] BBox overlap: " + String.format("%.0f%%", bboxOverlap * 100));
+            
+            // If bounding boxes barely overlap, no need to check further
+            if (bboxOverlap < 0.3) {
+                System.out.println("    [DPWMapper] BBox overlap too low, skipping");
+                return 0;
+            }
+            
+            // Calculate node-based overlap (bidirectional)
+            double nodeOverlap = calculateNodeOverlap(newWay, oldWay);
+            System.out.println("    [DPWMapper] Node overlap: " + String.format("%.0f%%", nodeOverlap * 100));
+            
+            // Combine both metrics: use average weighted towards node overlap
+            double combinedOverlap = (bboxOverlap * 0.3) + (nodeOverlap * 0.7);
+            System.out.println("    [DPWMapper] Combined overlap: " + String.format("%.0f%%", combinedOverlap * 100));
+            
+            return combinedOverlap;
             
         } catch (Exception e) {
-            // If calculation fails, assume no overlap
+            System.out.println("    [DPWMapper] calculateOverlapPercentage ERROR: " + e.getMessage());
+            e.printStackTrace();
             return 0;
         }
+    }
+    
+    /**
+     * Calculate bounding box overlap percentage.
+     */
+    private double calculateBBoxOverlap(BBox bbox1, BBox bbox2, BBox referenceBBox) {
+        // Calculate intersection rectangle
+        double intersectMinLat = Math.max(bbox1.getBottomRight().lat(), bbox2.getBottomRight().lat());
+        double intersectMaxLat = Math.min(bbox1.getTopLeft().lat(), bbox2.getTopLeft().lat());
+        double intersectMinLon = Math.max(bbox1.getTopLeft().lon(), bbox2.getTopLeft().lon());
+        double intersectMaxLon = Math.min(bbox1.getBottomRight().lon(), bbox2.getBottomRight().lon());
+        
+        if (intersectMinLat >= intersectMaxLat || intersectMinLon >= intersectMaxLon) {
+            return 0; // No intersection
+        }
+        
+        // Calculate areas (approximation using lat/lon degrees)
+        double intersectArea = (intersectMaxLat - intersectMinLat) * (intersectMaxLon - intersectMinLon);
+        double referenceArea = (referenceBBox.getTopLeft().lat() - referenceBBox.getBottomRight().lat()) * 
+                               (referenceBBox.getBottomRight().lon() - referenceBBox.getTopLeft().lon());
+        
+        if (referenceArea == 0) {
+            return 0;
+        }
+        
+        return intersectArea / referenceArea;
+    }
+    
+    /**
+     * Calculate node-based overlap using bidirectional check.
+     */
+    private double calculateNodeOverlap(Way newWay, Way oldWay) {
+        List<Node> newNodes = newWay.getNodes();
+        List<Node> oldNodes = oldWay.getNodes();
+        
+        if (newNodes.isEmpty() || oldNodes.isEmpty()) {
+            return 0;
+        }
+        
+        // BIDIRECTIONAL CHECK: Count nodes from BOTH ways that are inside the OTHER
+        int newNodesInsideOld = 0;
+        for (Node newNode : newNodes) {
+            if (Geometry.nodeInsidePolygon(newNode, oldNodes)) {
+                newNodesInsideOld++;
+            }
+        }
+        
+        int oldNodesInsideNew = 0;
+        for (Node oldNode : oldNodes) {
+            if (Geometry.nodeInsidePolygon(oldNode, newNodes)) {
+                oldNodesInsideNew++;
+            }
+        }
+        
+        double newInsidePercentage = (double) newNodesInsideOld / newNodes.size();
+        double oldInsidePercentage = (double) oldNodesInsideNew / oldNodes.size();
+        
+        System.out.println("    [DPWMapper] New nodes inside old: " + newNodesInsideOld + "/" + newNodes.size() + " (" + String.format("%.0f%%", newInsidePercentage * 100) + ")");
+        System.out.println("    [DPWMapper] Old nodes inside new: " + oldNodesInsideNew + "/" + oldNodes.size() + " (" + String.format("%.0f%%", oldInsidePercentage * 100) + ")");
+        
+        // Use the MAXIMUM of both percentages
+        return Math.max(newInsidePercentage, oldInsidePercentage);
     }
     
     /**
@@ -295,54 +384,7 @@ public class MergeAndFixAction extends JosmAction {
         }
     }
     
-    /**
-     * Calculate intersection area between two ways using bounding box and node proximity.
-     * This is a simplified approximation since full polygon intersection is complex.
-     */
-    private double calculateIntersectionArea(Way newWay, Way oldWay) {
-        try {
-            // Get nodes from both ways
-            List<Node> newNodes = newWay.getNodes();
-            List<Node> oldNodes = oldWay.getNodes();
-            
-            if (newNodes.isEmpty() || oldNodes.isEmpty()) {
-                return 0;
-            }
-            
-            // BIDIRECTIONAL CHECK: Count nodes from BOTH ways that are inside the OTHER
-            int newNodesInsideOld = 0;
-            for (Node newNode : newNodes) {
-                if (Geometry.nodeInsidePolygon(newNode, oldNodes)) {
-                    newNodesInsideOld++;
-                }
-            }
-            
-            int oldNodesInsideNew = 0;
-            for (Node oldNode : oldNodes) {
-                if (Geometry.nodeInsidePolygon(oldNode, newNodes)) {
-                    oldNodesInsideNew++;
-                }
-            }
-            
-            // Use the MAXIMUM of both percentages
-            double newInsidePercentage = (double) newNodesInsideOld / newNodes.size();
-            double oldInsidePercentage = (double) oldNodesInsideNew / oldNodes.size();
-            double overlapPercentage = Math.max(newInsidePercentage, oldInsidePercentage);
-            
-            // Approximate intersection area
-            double oldArea = Geometry.computeArea(oldWay);
-            
-            System.out.println("    [DPWMapper] New nodes inside old: " + newNodesInsideOld + "/" + newNodes.size() + " (" + String.format("%.0f%%", newInsidePercentage * 100) + ")");
-            System.out.println("    [DPWMapper] Old nodes inside new: " + oldNodesInsideNew + "/" + oldNodes.size() + " (" + String.format("%.0f%%", oldInsidePercentage * 100) + ")");
-            System.out.println("    [DPWMapper] Using max: " + String.format("%.0f%%", overlapPercentage * 100));
-            
-            return oldArea * overlapPercentage;
-            
-        } catch (Exception e) {
-            System.out.println("    [DPWMapper] calculateIntersectionArea ERROR: " + e.getMessage());
-            return 0;
-        }
-    }
+
     
     /**
      * Helper class to store merge operation results.
