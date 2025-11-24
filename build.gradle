@@ -16,8 +16,7 @@ repositories {
 }
 
 dependencies {
-    // JOSM dependency to be added when full API integration is complete
-    // compileOnly files('libs/josm-18729.jar')
+    compileOnly files('libs/josm-18729.jar')
 }
 
 jar {

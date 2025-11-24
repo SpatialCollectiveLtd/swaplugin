@@ -1,5 +1,11 @@
 package org.openstreetmap.josm.plugins.dpwmapper;
 
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.MapFrame;
+import org.openstreetmap.josm.plugins.Plugin;
+import org.openstreetmap.josm.plugins.PluginInformation;
+import org.openstreetmap.josm.tools.Logging;
+
 /**
  * DPW Mapper Support Plugin - The Clean Slate Tool
  * 
@@ -8,17 +14,36 @@ package org.openstreetmap.josm.plugins.dpwmapper;
  * 2. Allows mappers to trace buildings on blank imagery
  * 3. Automatically merges new geometries onto old IDs to preserve history
  * 
- * Version 1.0.0 - Initial Release
- * Framework ready - Full JOSM integration to be completed in v1.1.0
- * 
  * @author Spatial Collective Ltd
  * @version 1.0.0
  */
-public class DPWMapperPlugin {
+public class DPWMapperPlugin extends Plugin {
     
-    public static void main(String[] args) {
-        System.out.println("DPW Mapper Support Plugin v1.0.0");
-        System.out.println("Plugin framework initialized");
-        System.out.println("Full JOSM integration coming in v1.1.0");
+    private AutoHideListener autoHideListener;
+    
+    public DPWMapperPlugin(PluginInformation info) {
+        super(info);
+        Logging.info("DPW Mapper Support Plugin v1.0.0 loaded");
+    }
+    
+    @Override
+    public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
+        if (newFrame != null) {
+            // Initialize and register the auto-hide listener
+            if (autoHideListener == null) {
+                autoHideListener = new AutoHideListener();
+            }
+            MainApplication.getLayerManager().addLayerChangeListener(autoHideListener);
+            
+            // Register the Merge & Fix action in the Tools menu
+            MainApplication.getMenu().toolsMenu.add(new MergeAndFixAction());
+            
+            Logging.info("DPW Mapper: Auto-hide listener and Merge & Fix action registered");
+        } else if (oldFrame != null) {
+            // Cleanup when map frame is destroyed
+            if (autoHideListener != null) {
+                MainApplication.getLayerManager().removeLayerChangeListener(autoHideListener);
+            }
+        }
     }
 }
