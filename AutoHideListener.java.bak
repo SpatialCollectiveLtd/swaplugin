@@ -59,12 +59,12 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
         GuiHelper.runInEDT(() -> {
             try {
                 // Get or create the filter table model
-                var filterModel = MainApplication.getMap().filterDialog.getFilterModel();
+                org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = MainApplication.getMap().filterDialog.getFilterModel();
                 
                 // Check if our filter already exists
                 boolean filterExists = false;
                 for (int i = 0; i < filterModel.getRowCount(); i++) {
-                    var filter = filterModel.getValue(i);
+                    org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
                     if (filter != null && FILTER_TEXT.equals(filter.text)) {
                         // Filter exists, just enable it
                         filter.enable = true;
@@ -76,7 +76,7 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
                 
                 // If filter doesn't exist, create it
                 if (!filterExists) {
-                    var newFilter = new org.openstreetmap.josm.data.osm.Filter();
+                    org.openstreetmap.josm.data.osm.Filter newFilter = new org.openstreetmap.josm.data.osm.Filter();
                     newFilter.text = FILTER_TEXT;
                     newFilter.hiding = true;  // Hide matching objects
                     newFilter.enable = true;   // Enable the filter

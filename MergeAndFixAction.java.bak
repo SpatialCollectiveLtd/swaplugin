@@ -4,7 +4,9 @@ import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.command.ChangeCommand;
 import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
+import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.osm.*;
+import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
@@ -70,7 +72,7 @@ public class MergeAndFixAction extends JosmAction {
                     .show();
             } else {
                 // Execute all commands as a single undoable operation
-                MainApplication.undoRedo.add(
+                UndoRedoHandler.getInstance().add(
                     new SequenceCommand("DPW Auto-Merge", result.commands)
                 );
                 
@@ -197,8 +199,8 @@ public class MergeAndFixAction extends JosmAction {
                 return 0;
             }
             
-            // Calculate intersection area
-            double intersectionArea = Geometry.getAreaOfIntersection(newWay, oldWay);
+            // Calculate intersection area using node overlap
+            double intersectionArea = calculateIntersectionArea(newWay, oldWay);
             
             // Return percentage of old building covered by new building
             return intersectionArea / oldArea;
@@ -214,10 +216,10 @@ public class MergeAndFixAction extends JosmAction {
      */
     private void disableCleanSlateFilter() {
         try {
-            var filterModel = MainApplication.getMap().filterDialog.getFilterModel();
+            org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = MainApplication.getMap().filterDialog.getFilterModel();
             
             for (int i = 0; i < filterModel.getRowCount(); i++) {
-                var filter = filterModel.getValue(i);
+                org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
                 if (filter != null && "id:1-".equals(filter.text)) {
                     filter.enable = false;
                     filterModel.executeFilters();

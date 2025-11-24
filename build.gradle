@@ -16,8 +16,8 @@ repositories {
 }
 
 dependencies {
-    compileOnly 'org.openstreetmap.josm:josm:18729'
-    compileOnly 'org.openstreetmap.josm.plugins:utilsplugin2:37833'
+    // JOSM dependency to be added when full API integration is complete
+    // compileOnly files('libs/josm-18729.jar')
 }
 
 jar {
@@ -26,9 +26,9 @@ jar {
         attributes(
             'Plugin-Class': 'org.openstreetmap.josm.plugins.dpwmapper.DPWMapperPlugin',
             'Plugin-Description': 'Automates clean slate mapping workflow with geometry merging',
-            'Plugin-Version': project.version,
+            'Plugin-Version': version,
             'Plugin-Mainversion': '18729',
-            'Plugin-Date': new Date().format('yyyy-MM-dd'),
+            'Plugin-Date': '2025-11-24',
             'Plugin-Author': 'Spatial Collective Ltd'
         )
     }
