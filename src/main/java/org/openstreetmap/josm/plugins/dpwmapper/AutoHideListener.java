@@ -23,7 +23,7 @@ import java.util.Collections;
  */
 public class AutoHideListener implements LayerChangeListener, DataSetListener {
     
-    private static final String FILTER_TEXT = "-new";  // Hide everything that is NOT new
+    private static final String FILTER_TEXT = "!:new";  // Hide everything that is NOT new
     private static final String NOTIFICATION_MESSAGE = "Clean Slate Active - Existing data hidden";
     
     @Override
