@@ -93,10 +93,13 @@ public class MergeAndFixAction extends JosmAction {
                 );
                 
                 String message = String.format(
-                    "✓ Merged %d buildings\n%d new buildings, %d conflicts",
+                    "✓ Merged %d buildings\n%d new buildings preserved\n\n" +
+                    "VALIDATION TIP:\n" +
+                    "• Only NEW objects are now selected\n" +
+                    "• Click 'Validate' to check ONLY your work\n" +
+                    "• Old data errors (hidden) can be ignored",
                     result.mergedCount,
-                    result.newBuildingCount - result.mergedCount,
-                    result.conflictCount
+                    result.newBuildingCount - result.mergedCount
                 );
                 
                 new Notification(message)
@@ -107,6 +110,22 @@ public class MergeAndFixAction extends JosmAction {
                 // Select conflicted objects for manual review
                 if (!result.conflicts.isEmpty()) {
                     dataSet.setSelected(result.conflicts);
+                } else {
+                    // Select only NEW objects for validation
+                    List<OsmPrimitive> newObjects = dataSet.allPrimitives().stream()
+                        .filter(p -> p.isNew() && !p.isDeleted())
+                        .collect(Collectors.toList());
+                    
+                    if (!newObjects.isEmpty()) {
+                        dataSet.setSelected(newObjects);
+                        System.out.println("[DPWMapper] Selected " + newObjects.size() + " new objects for validation");
+                        
+                        // Show helpful message
+                        new Notification("Ready for validation!\n\nOnly NEW objects are selected.\nClick 'Validate' to check your work only.")
+                            .setIcon(JOptionPane.INFORMATION_MESSAGE)
+                            .setDuration(Notification.TIME_LONG)
+                            .show();
+                    }
                 }
             }
             
