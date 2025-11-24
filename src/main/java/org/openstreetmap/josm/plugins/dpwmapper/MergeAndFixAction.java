@@ -47,9 +47,14 @@ public class MergeAndFixAction extends JosmAction {
     
     @Override
     public void actionPerformed(ActionEvent e) {
+        System.out.println("\n========================================");
+        System.out.println("[DPWMapper] MERGE & FIX STARTED");
+        System.out.println("========================================");
+        
         // Get active data layer
         OsmDataLayer layer = MainApplication.getLayerManager().getEditLayer();
         if (layer == null) {
+            System.out.println("[DPWMapper] ERROR: No active data layer");
             new Notification("No active data layer found")
                 .setIcon(JOptionPane.WARNING_MESSAGE)
                 .show();
@@ -57,8 +62,10 @@ public class MergeAndFixAction extends JosmAction {
         }
         
         DataSet dataSet = layer.getDataSet();
+        System.out.println("[DPWMapper] Active layer: " + layer.getName());
         
         // Temporarily disable the clean slate filter to access hidden objects
+        System.out.println("[DPWMapper] Disabling clean slate filter...");
         disableCleanSlateFilter();
         
         try {
@@ -119,6 +126,8 @@ public class MergeAndFixAction extends JosmAction {
     private MergeResult performMerge(DataSet dataSet) {
         MergeResult result = new MergeResult();
         
+        System.out.println("\n[DPWMapper] === MERGE ANALYSIS ===");
+        
         // Separate ways into new and old
         List<Way> newBuildings = dataSet.getWays().stream()
             .filter(w -> w.isNew() && !w.isDeleted() && w.isClosed() && w.hasTag("building"))
@@ -130,14 +139,22 @@ public class MergeAndFixAction extends JosmAction {
         
         result.newBuildingCount = newBuildings.size();
         
+        System.out.println("[DPWMapper] New buildings: " + newBuildings.size());
+        System.out.println("[DPWMapper] Old buildings: " + oldBuildings.size());
+        
         // Track which old buildings have been matched
         Set<Way> matchedOldBuildings = new HashSet<>();
         
         // Process each new building
-        for (Way newBuilding : newBuildings) {
+        for (int i = 0; i < newBuildings.size(); i++) {
+            Way newBuilding = newBuildings.get(i);
+            System.out.println("\n[DPWMapper] Processing new building " + (i+1) + "/" + newBuildings.size());
+            System.out.println("[DPWMapper] New building ID: " + newBuilding.getId());
+            
             Way bestMatch = findBestMatch(newBuilding, oldBuildings, matchedOldBuildings);
             
             if (bestMatch != null) {
+                System.out.println("[DPWMapper] MATCH FOUND with old building ID: " + bestMatch.getId());
                 // Check for conflicts (multiple new buildings matching one old)
                 if (matchedOldBuildings.contains(bestMatch)) {
                     result.conflicts.add(newBuilding);
@@ -159,14 +176,17 @@ public class MergeAndFixAction extends JosmAction {
                     
                     matchedOldBuildings.add(bestMatch);
                     result.mergedCount++;
+                    System.out.println("[DPWMapper] Successfully merged");
                     
                 } catch (Exception ex) {
+                    System.out.println("[DPWMapper] MERGE FAILED: " + ex.getMessage());
                     ex.printStackTrace();
                     result.conflicts.add(newBuilding);
                     result.conflictCount++;
                 }
+            } else {
+                System.out.println("[DPWMapper] No match found - keeping as new building");
             }
-            // If no match found, the new building stays as is (brand new building)
         }
         
         return result;
@@ -180,6 +200,8 @@ public class MergeAndFixAction extends JosmAction {
         Way bestMatch = null;
         double maxOverlap = OVERLAP_THRESHOLD;
         
+        int candidateCount = 0;
+        
         for (Way oldBuilding : oldBuildings) {
             if (alreadyMatched.contains(oldBuilding)) {
                 continue;
@@ -190,14 +212,22 @@ public class MergeAndFixAction extends JosmAction {
                 continue;
             }
             
+            candidateCount++;
+            System.out.println("  [DPWMapper] Checking overlap with old building ID: " + oldBuilding.getId());
+            
             // Precise check: Calculate overlap percentage
             double overlap = calculateOverlapPercentage(newBuilding, oldBuilding);
+            
+            System.out.println("  [DPWMapper] Overlap: " + String.format("%.2f%%", overlap * 100) + " (threshold: " + (OVERLAP_THRESHOLD * 100) + "%)");
             
             if (overlap > maxOverlap) {
                 maxOverlap = overlap;
                 bestMatch = oldBuilding;
+                System.out.println("  [DPWMapper] NEW BEST MATCH (" + String.format("%.2f%%", overlap * 100) + ")");
             }
         }
+        
+        System.out.println("  [DPWMapper] Checked " + candidateCount + " candidates, best overlap: " + String.format("%.2f%%", maxOverlap * 100));
         
         return bestMatch;
     }
@@ -279,21 +309,37 @@ public class MergeAndFixAction extends JosmAction {
                 return 0;
             }
             
-            // Count how many nodes from newWay are inside or very close to oldWay
-            int nodesInside = 0;
+            // BIDIRECTIONAL CHECK: Count nodes from BOTH ways that are inside the OTHER
+            int newNodesInsideOld = 0;
             for (Node newNode : newNodes) {
                 if (Geometry.nodeInsidePolygon(newNode, oldNodes)) {
-                    nodesInside++;
+                    newNodesInsideOld++;
                 }
             }
             
-            // Approximate intersection as percentage of nodes inside * area of new way
-            double newArea = Geometry.computeArea(newWay);
-            double nodePercentage = (double) nodesInside / newNodes.size();
+            int oldNodesInsideNew = 0;
+            for (Node oldNode : oldNodes) {
+                if (Geometry.nodeInsidePolygon(oldNode, newNodes)) {
+                    oldNodesInsideNew++;
+                }
+            }
             
-            return newArea * nodePercentage;
+            // Use the MAXIMUM of both percentages
+            double newInsidePercentage = (double) newNodesInsideOld / newNodes.size();
+            double oldInsidePercentage = (double) oldNodesInsideNew / oldNodes.size();
+            double overlapPercentage = Math.max(newInsidePercentage, oldInsidePercentage);
+            
+            // Approximate intersection area
+            double oldArea = Geometry.computeArea(oldWay);
+            
+            System.out.println("    [DPWMapper] New nodes inside old: " + newNodesInsideOld + "/" + newNodes.size() + " (" + String.format("%.0f%%", newInsidePercentage * 100) + ")");
+            System.out.println("    [DPWMapper] Old nodes inside new: " + oldNodesInsideNew + "/" + oldNodes.size() + " (" + String.format("%.0f%%", oldInsidePercentage * 100) + ")");
+            System.out.println("    [DPWMapper] Using max: " + String.format("%.0f%%", overlapPercentage * 100));
+            
+            return oldArea * overlapPercentage;
             
         } catch (Exception e) {
+            System.out.println("    [DPWMapper] calculateIntersectionArea ERROR: " + e.getMessage());
             return 0;
         }
     }
