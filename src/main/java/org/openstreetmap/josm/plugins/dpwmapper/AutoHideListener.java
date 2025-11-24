@@ -58,8 +58,28 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
     private void applyCleanSlateFilter(OsmDataLayer layer) {
         GuiHelper.runInEDT(() -> {
             try {
+                System.out.println("DPW Mapper: Attempting to apply clean slate filter...");
+                
+                // Check if map and filter dialog exist
+                if (MainApplication.getMap() == null) {
+                    System.err.println("DPW Mapper: Map is null, cannot apply filter");
+                    return;
+                }
+                
+                if (MainApplication.getMap().filterDialog == null) {
+                    System.err.println("DPW Mapper: Filter dialog is null, cannot apply filter");
+                    return;
+                }
+                
                 // Get or create the filter table model
                 org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = MainApplication.getMap().filterDialog.getFilterModel();
+                
+                if (filterModel == null) {
+                    System.err.println("DPW Mapper: Filter model is null");
+                    return;
+                }
+                
+                System.out.println("DPW Mapper: Filter model found with " + filterModel.getRowCount() + " filters");
                 
                 // Check if our filter already exists
                 boolean filterExists = false;
@@ -67,6 +87,7 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
                     org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
                     if (filter != null && FILTER_TEXT.equals(filter.text)) {
                         // Filter exists, just enable it
+                        System.out.println("DPW Mapper: Filter already exists, enabling it");
                         filter.enable = true;
                         filter.hiding = true;
                         filterExists = true;
@@ -76,6 +97,7 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
                 
                 // If filter doesn't exist, create it
                 if (!filterExists) {
+                    System.out.println("DPW Mapper: Creating new filter: " + FILTER_TEXT);
                     org.openstreetmap.josm.data.osm.Filter newFilter = new org.openstreetmap.josm.data.osm.Filter();
                     newFilter.text = FILTER_TEXT;
                     newFilter.hiding = true;  // Hide matching objects
@@ -83,10 +105,12 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
                     newFilter.inverted = false;
                     
                     filterModel.addFilter(newFilter);
+                    System.out.println("DPW Mapper: Filter added to model");
                 }
                 
                 // Execute the filter
                 filterModel.executeFilters();
+                System.out.println("DPW Mapper: Filters executed successfully");
                 
                 // Notify the user
                 new Notification(NOTIFICATION_MESSAGE)

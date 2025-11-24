@@ -23,26 +23,34 @@ public class DPWMapperPlugin extends Plugin {
     
     public DPWMapperPlugin(PluginInformation info) {
         super(info);
+        System.out.println("DPW Mapper Support Plugin v1.0.0 initializing...");
         Logging.info("DPW Mapper Support Plugin v1.0.0 loaded");
     }
     
     @Override
     public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
         if (newFrame != null) {
+            System.out.println("DPW Mapper: Map frame initialized, registering listeners...");
+            
             // Initialize and register the auto-hide listener
             if (autoHideListener == null) {
                 autoHideListener = new AutoHideListener();
+                System.out.println("DPW Mapper: AutoHideListener created");
             }
             MainApplication.getLayerManager().addLayerChangeListener(autoHideListener);
+            System.out.println("DPW Mapper: AutoHideListener registered with LayerManager");
             
             // Register the Merge & Fix action in the Tools menu
             MainApplication.getMenu().toolsMenu.add(new MergeAndFixAction());
+            System.out.println("DPW Mapper: Merge & Fix action added to Tools menu");
             
             Logging.info("DPW Mapper: Auto-hide listener and Merge & Fix action registered");
         } else if (oldFrame != null) {
+            System.out.println("DPW Mapper: Map frame destroyed, cleaning up...");
             // Cleanup when map frame is destroyed
             if (autoHideListener != null) {
                 MainApplication.getLayerManager().removeLayerChangeListener(autoHideListener);
+                System.out.println("DPW Mapper: AutoHideListener removed");
             }
         }
     }
