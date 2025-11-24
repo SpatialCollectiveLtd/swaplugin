@@ -33,7 +33,7 @@ public class MergeAndFixAction extends JosmAction {
     public MergeAndFixAction() {
         super(
             "Merge & Fix",
-            "dpwmapper",
+            (String) null,  // No icon
             "Merge new buildings into existing OSM data",
             Shortcut.registerShortcut(
                 "tools:dpwmerge",
