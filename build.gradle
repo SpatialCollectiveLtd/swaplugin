@@ -1,0 +1,45 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.openstreetmap.josm.plugins'
+version = '1.0.0'
+
+sourceCompatibility = '1.8'
+targetCompatibility = '1.8'
+
+repositories {
+    mavenCentral()
+    maven {
+        url "https://josm.openstreetmap.de/nexus/content/repositories/releases/"
+    }
+}
+
+dependencies {
+    compileOnly 'org.openstreetmap.josm:josm:18729'
+    compileOnly 'org.openstreetmap.josm.plugins:utilsplugin2:37833'
+}
+
+jar {
+    archiveBaseName = 'DPWMapper'
+    manifest {
+        attributes(
+            'Plugin-Class': 'org.openstreetmap.josm.plugins.dpwmapper.DPWMapperPlugin',
+            'Plugin-Description': 'Automates clean slate mapping workflow with geometry merging',
+            'Plugin-Version': project.version,
+            'Plugin-Mainversion': '18729',
+            'Plugin-Date': new Date().format('yyyy-MM-dd'),
+            'Plugin-Author': 'Spatial Collective Ltd'
+        )
+    }
+    
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+tasks.register('installPlugin', Copy) {
+    dependsOn jar
+    from jar.archiveFile
+    into System.getProperty('user.home') + '/.local/share/JOSM/plugins'
+}

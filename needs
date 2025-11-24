@@ -1,0 +1,151 @@
+Project Title: DPW Mapper Support Plugin ("Clean Slate" Tool)
+1. Executive Summary
+Objective: To create a JOSM plugin that automates a "Clean Slate" remapping workflow for youth mappers. Problem: Mappers need to see a blank map to trace buildings accurately from new imagery. However, blocking the download of existing OSM data creates duplicate data upon upload. Solution: A plugin that automatically hides existing data upon download, allows the mapper to trace on a visual "clean slate," and then automates the merging of new shapes onto old IDs to preserve OpenStreetMap history.
+
+2. User Workflow (The "Happy Path")
+This is the experience the youth mapper will have:
+
+Task Selection: Mapper clicks "Start Editor" in the HOT Tasking Manager.
+
+Auto-Setup (Plugin Action): JOSM loads. The plugin detects the data download. It immediately hides all existing OSM data (using a filter).
+
+User sees: Only the satellite imagery (Clean Slate).
+
+Mapping: Mapper traces all buildings visible in the imagery.
+
+User sees: Their new drawings appearing on top of the imagery.
+
+Completion: Mapper clicks a single button in the toolbar: "Merge & Fix".
+
+Auto-Merge (Plugin Action):
+
+The plugin temporarily unhides old data in the background.
+
+It identifies which "New" buildings correspond to "Old" buildings based on location.
+
+It swaps the geometry (updates the old building with the new shape).
+
+It deletes the temporary "New" shapes.
+
+Review: The filter is disabled. The mapper sees the final result (Old IDs with New Shapes).
+
+Upload: Mapper clicks standard Upload to save changes to OSM.
+
+3. Functional Requirements
+Feature A: Auto-Hide (The Clean Slate)
+Trigger: The plugin must listen for the DownloadTask or DataChanged event (specifically when data is loaded via Remote Control).
+
+Action: Programmatically apply a filter: id:1- (Hide + Enable).
+
+Constraint: Must ensure newly created objects (negative IDs) remain visible.
+
+Feature B: The "Merge & Fix" Algorithm
+Trigger: A button in the JOSM Toolbar/Side Menu.
+
+Logic:
+
+Get all objects in the active data layer.
+
+Separate objects into two lists:
+
+New Objects: id < 0 (Primitive ID is new).
+
+Old Objects: id > 0 (Primitive ID exists on server).
+
+Iterate through New Objects.
+
+Spatial Query: Find any Old Object that significantly overlaps the New Object.
+
+Threshold: Intersection area > 50% of the Old Object's area.
+
+Execution:
+
+If Match Found: Copy the coordinates/nodes of the New Object to the Old Object. Delete the New Object. (This mimics utilsplugin2 "Replace Geometry").
+
+If No Match Found: Keep the New Object as is (it’s a brand new building).
+
+If Conflict (e.g., 2 New overlap 1 Old): Skip and flag for manual review.
+
+Feature C: UI Elements
+Toolbar Button: Icon representing "Merge/Swap".
+
+Status Indicator: Simple text in the status bar (e.g., "Clean Slate Active").
+
+4. Technical Implementation Guidelines
+Dependencies & Resources
+Platform: JOSM (Java OpenStreetMap Editor).
+
+Language: Java.
+
+JOSM API Documentation: https://josm.openstreetmap.de/wiki/DevelopersGuide
+
+Reference Code: The developer should look at the source code for utilsplugin2 (specifically the ReplaceGeometry function) to see how geometry swapping is handled programmatically.
+
+Repo: https://github.com/JOSM/utilsplugin2
+
+Code Logic Pseudo-Code (For Developer)
+
+// PSEUDO-CODE LOGIC FOR "MERGE & FIX" BUTTON
+
+void onMergeButtonClicked() {
+    Layer activeLayer = Main.getLayerManager().getActiveDataLayer();
+    
+    // 1. Disable the "Clean Slate" filter temporarily so we can access logic
+    Filter cleanSlateFilter = FilterManager.findFilter("id:1-");
+    cleanSlateFilter.setDisabled(true);
+
+    List<Way> newBuildings = activeLayer.getNewWays(); // IDs < 0
+    List<Way> oldBuildings = activeLayer.getExistingWays(); // IDs > 0
+
+    Transaction transaction = new Transaction();
+
+    for (Way newB : newBuildings) {
+        // Find overlaps
+        Way bestMatch = null;
+        double maxOverlap = 0;
+
+        for (Way oldB : oldBuildings) {
+            if (newB.getBBox().intersects(oldB.getBBox())) {
+                 // Calculate precise intersection area using JOSM Geometry utils
+                 double overlapArea = Geometry.getIntersectionArea(newB, oldB);
+                 if (overlapArea > (oldB.getArea() * 0.5)) {
+                     bestMatch = oldB;
+                     break; // Assume 1-to-1 match for simplicity
+                 }
+            }
+        }
+
+        if (bestMatch != null) {
+            // TRANSFER GEOMETRY
+            // 1. Create a command to update 'bestMatch' nodes to match 'newB' nodes
+            Command updateCmd = new ChangeCommand(bestMatch, newB.getNodes());
+            transaction.add(updateCmd);
+            
+            // 2. Create a command to delete the temp 'newB'
+            Command deleteCmd = new DeleteCommand(newB);
+            transaction.add(deleteCmd);
+        }
+    }
+
+    // Execute all changes
+    Main.main.undoRedo.add(transaction);
+    
+    // 2. Re-enable filter? Or leave disabled so user can review?
+    // Recommendation: Leave disabled so user sees the result.
+}
+
+5. Deliverables
+Source Code: GitHub repository with the plugin Java source code.
+
+Compiled .jar File: A ready-to-install DPWMapper.jar file.
+
+Installation Guide: Steps to install the plugin in JOSM (Local > Plugins > Install).
+
+Short Demo Video: Screen recording showing the "Hide -> Map -> Merge" workflow working successfully.
+
+6. Important Developer Notes
+Conflict Handling: If the algorithm detects complex overlaps (e.g., one huge new building covering three small old ones), it should do nothing for those specific buildings and highlight them (selection) so the user can handle them manually. Better to be safe than destroy data.
+
+Tags: The plugin should preserve the tags (metadata) of the Old Object (e.g., addr:street). If the New Object has tags, decide if they overwrite or append. Default: Keep Old Object tags, update Geometry only.
+
+Performance: Ensure the spatial search is efficient. Using BBox (Bounding Box) checks before calculating complex geometry intersections is crucial for speed.

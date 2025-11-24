@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Clean Slate - represents a blank canvas -->
+  <rect x="3" y="3" width="18" height="18" fill="#e8f4f8" stroke="#0077be" stroke-width="2" rx="2"/>
+  
+  <!-- Merge arrows - represents merging new to old -->
+  <path d="M 8 10 L 12 14 L 16 10" fill="none" stroke="#00aa00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 12 14 L 12 18" fill="none" stroke="#00aa00" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Magic wand sparkle effect -->
+  <circle cx="17" cy="7" r="1.5" fill="#ffaa00"/>
+  <circle cx="19" cy="9" r="1" fill="#ffaa00"/>
+  <circle cx="15" cy="9" r="1" fill="#ffaa00"/>
+</svg>
