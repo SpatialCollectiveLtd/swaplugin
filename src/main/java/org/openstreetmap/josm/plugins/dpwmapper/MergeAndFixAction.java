@@ -67,9 +67,17 @@ public class MergeAndFixAction extends JosmAction {
             
             // Show results to user
             if (result.commands.isEmpty()) {
-                new Notification("No buildings to merge")
-                    .setIcon(JOptionPane.INFORMATION_MESSAGE)
-                    .show();
+                if (result.newBuildingCount == 0) {
+                    new Notification("No new buildings found to merge.\n\nWorkflow: 1) Download data, 2) Trace new buildings, 3) Run Merge & Fix")
+                        .setIcon(JOptionPane.INFORMATION_MESSAGE)
+                        .setDuration(Notification.TIME_LONG)
+                        .show();
+                } else {
+                    new Notification(String.format("Found %d new buildings but no overlapping matches.\n\nNew buildings preserved.", result.newBuildingCount))
+                        .setIcon(JOptionPane.INFORMATION_MESSAGE)
+                        .setDuration(Notification.TIME_LONG)
+                        .show();
+                }
             } else {
                 // Execute all commands as a single undoable operation
                 UndoRedoHandler.getInstance().add(
@@ -77,8 +85,9 @@ public class MergeAndFixAction extends JosmAction {
                 );
                 
                 String message = String.format(
-                    "Merged %d buildings. %d conflicts found.",
+                    "✓ Merged %d buildings\n%d new buildings, %d conflicts",
                     result.mergedCount,
+                    result.newBuildingCount - result.mergedCount,
                     result.conflictCount
                 );
                 
@@ -98,6 +107,9 @@ public class MergeAndFixAction extends JosmAction {
             new Notification("Merge failed: " + ex.getMessage())
                 .setIcon(JOptionPane.ERROR_MESSAGE)
                 .show();
+        } finally {
+            // Re-enable the clean slate filter
+            enableCleanSlateFilter();
         }
     }
     
@@ -115,6 +127,8 @@ public class MergeAndFixAction extends JosmAction {
         List<Way> oldBuildings = dataSet.getWays().stream()
             .filter(w -> !w.isNew() && !w.isDeleted() && w.isClosed() && w.hasTag("building"))
             .collect(Collectors.toList());
+        
+        result.newBuildingCount = newBuildings.size();
         
         // Track which old buildings have been matched
         Set<Way> matchedOldBuildings = new HashSet<>();
@@ -232,6 +246,26 @@ public class MergeAndFixAction extends JosmAction {
     }
     
     /**
+     * Re-enables the clean slate filter after merge is complete.
+     */
+    private void enableCleanSlateFilter() {
+        try {
+            org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = MainApplication.getMap().filterDialog.getFilterModel();
+            
+            for (int i = 0; i < filterModel.getRowCount(); i++) {
+                org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
+                if (filter != null && "id:1-".equals(filter.text)) {
+                    filter.enable = true;
+                    filterModel.executeFilters();
+                    break;
+                }
+            }
+        } catch (Exception ex) {
+            // Filter might not exist, that's okay
+        }
+    }
+    
+    /**
      * Calculate intersection area between two ways using bounding box and node proximity.
      * This is a simplified approximation since full polygon intersection is complex.
      */
@@ -272,5 +306,6 @@ public class MergeAndFixAction extends JosmAction {
         List<OsmPrimitive> conflicts = new ArrayList<>();
         int mergedCount = 0;
         int conflictCount = 0;
+        int newBuildingCount = 0;
     }
 }
