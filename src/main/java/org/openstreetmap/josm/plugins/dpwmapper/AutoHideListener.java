@@ -26,37 +26,67 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
     
     @Override
     public void layerAdded(LayerAddEvent e) {
+        System.out.println("[DPWMapper] ===== LAYER ADDED EVENT =====");
+        System.out.println("[DPWMapper] Layer type: " + e.getAddedLayer().getClass().getName());
+        
         if (e.getAddedLayer() instanceof OsmDataLayer) {
             OsmDataLayer dataLayer = (OsmDataLayer) e.getAddedLayer();
             
-            System.out.println("[DPWMapper] Layer added: " + dataLayer.getName());
+            System.out.println("[DPWMapper] OsmDataLayer detected: " + dataLayer.getName());
             
             // Add dataset listener to detect when data is downloaded
             dataLayer.getDataSet().addDataSetListener(this);
+            System.out.println("[DPWMapper] DataSet listener registered");
+            
+            // IMMEDIATELY check if data already exists
+            long immediateCount = dataLayer.getDataSet().getWays().stream()
+                .filter(w -> !w.isDeleted() && w.hasTag("building"))
+                .count();
+            System.out.println("[DPWMapper] Immediate building count: " + immediateCount);
+            
+            if (immediateCount > 0) {
+                System.out.println("[DPWMapper] Data already present, triggering preparation immediately");
+                prepareWorkspace(dataLayer, (int) immediateCount);
+            }
+        } else {
+            System.out.println("[DPWMapper] Not an OsmDataLayer, ignoring");
         }
     }
     
     @Override
     public void dataChanged(DataChangedEvent event) {
-        System.out.println("[DPWMapper] DataChanged event received");
+        System.out.println("[DPWMapper] ===== DATA CHANGED EVENT =====");
+        System.out.println("[DPWMapper] Event source: " + event.getDataset());
         
         OsmDataLayer layer = MainApplication.getLayerManager().getEditLayer();
-        if (layer != null && !isProcessing.get()) {
-            System.out.println("[DPWMapper] Active layer: " + layer.getName());
-            
-            // Count buildings in the dataset
-            long buildingCount = layer.getDataSet().getWays().stream()
-                .filter(w -> !w.isDeleted() && w.hasTag("building"))
-                .count();
-            
-            System.out.println("[DPWMapper] Buildings found: " + buildingCount);
-            
-            if (buildingCount > 0) {
-                // Show preparation dialog and apply filter
-                prepareWorkspace(layer, (int) buildingCount);
-            }
-        } else if (isProcessing.get()) {
+        if (layer == null) {
+            System.out.println("[DPWMapper] No active edit layer");
+            return;
+        }
+        
+        if (isProcessing.get()) {
             System.out.println("[DPWMapper] Already processing, skipping...");
+            return;
+        }
+        
+        System.out.println("[DPWMapper] Active layer: " + layer.getName());
+        
+        // Count ALL ways first
+        long totalWays = layer.getDataSet().getWays().size();
+        System.out.println("[DPWMapper] Total ways in dataset: " + totalWays);
+        
+        // Count buildings
+        long buildingCount = layer.getDataSet().getWays().stream()
+            .filter(w -> !w.isDeleted() && w.hasTag("building"))
+            .count();
+        
+        System.out.println("[DPWMapper] Buildings found: " + buildingCount);
+        
+        if (buildingCount > 0) {
+            System.out.println("[DPWMapper] Triggering workspace preparation");
+            prepareWorkspace(layer, (int) buildingCount);
+        } else {
+            System.out.println("[DPWMapper] No buildings found, not applying filter");
         }
     }
     
