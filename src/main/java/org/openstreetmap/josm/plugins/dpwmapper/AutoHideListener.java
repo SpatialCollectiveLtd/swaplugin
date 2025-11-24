@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class AutoHideListener implements LayerChangeListener, DataSetListener {
     
-    private static final String FILTER_TEXT = "!:new";  // Hide everything that is NOT new
+    private static final String FILTER_TEXT = "-new";  // Hide everything that is NOT new
     private final AtomicBoolean isProcessing = new AtomicBoolean(false);
     
     @Override
