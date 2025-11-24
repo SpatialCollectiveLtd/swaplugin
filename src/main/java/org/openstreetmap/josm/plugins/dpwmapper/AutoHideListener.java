@@ -9,122 +9,216 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerChangeListener;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 
-import javax.swing.JOptionPane;
-import java.util.Collections;
+import javax.swing.*;
+import java.awt.Frame;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Listener that automatically applies a filter to hide existing OSM data
- * when a new data layer is added (typically from Tasking Manager download).
- * 
- * This creates the "Clean Slate" view for mappers.
+ * when data is downloaded. Shows a preparation dialog to confirm the workspace is ready.
  */
 public class AutoHideListener implements LayerChangeListener, DataSetListener {
     
     private static final String FILTER_TEXT = "!:new";  // Hide everything that is NOT new
-    private static final String NOTIFICATION_MESSAGE = "Clean Slate Active - Existing data hidden";
+    private final AtomicBoolean isProcessing = new AtomicBoolean(false);
     
     @Override
     public void layerAdded(LayerAddEvent e) {
         if (e.getAddedLayer() instanceof OsmDataLayer) {
             OsmDataLayer dataLayer = (OsmDataLayer) e.getAddedLayer();
             
-            // Add dataset listener to detect when data is actually downloaded
-            dataLayer.getDataSet().addDataSetListener(this);
+            System.out.println("[DPWMapper] Layer added: " + dataLayer.getName());
             
-            // Apply filter if data already exists
-            applyCleanSlateFilter(dataLayer);
+            // Add dataset listener to detect when data is downloaded
+            dataLayer.getDataSet().addDataSetListener(this);
         }
     }
     
     @Override
     public void dataChanged(DataChangedEvent event) {
-        // When data changes (i.e., download completes), apply the filter
-        DataSet dataSet = event.getDataset();
-        if (dataSet != null && !dataSet.allPrimitives().isEmpty()) {
-            OsmDataLayer layer = MainApplication.getLayerManager().getEditLayer();
-            if (layer != null) {
-                applyCleanSlateFilter(layer);
+        System.out.println("[DPWMapper] DataChanged event received");
+        
+        OsmDataLayer layer = MainApplication.getLayerManager().getEditLayer();
+        if (layer != null && !isProcessing.get()) {
+            System.out.println("[DPWMapper] Active layer: " + layer.getName());
+            
+            // Count buildings in the dataset
+            long buildingCount = layer.getDataSet().getWays().stream()
+                .filter(w -> !w.isDeleted() && w.hasTag("building"))
+                .count();
+            
+            System.out.println("[DPWMapper] Buildings found: " + buildingCount);
+            
+            if (buildingCount > 0) {
+                // Show preparation dialog and apply filter
+                prepareWorkspace(layer, (int) buildingCount);
             }
+        } else if (isProcessing.get()) {
+            System.out.println("[DPWMapper] Already processing, skipping...");
         }
     }
     
     /**
-     * Applies the "Clean Slate" filter to hide all existing OSM data (id > 0)
-     * while keeping newly created objects (id < 0) visible.
+     * Shows a preparation dialog and applies the clean slate filter.
      */
-    private void applyCleanSlateFilter(OsmDataLayer layer) {
+    private void prepareWorkspace(OsmDataLayer layer, int buildingCount) {
+        if (!isProcessing.compareAndSet(false, true)) {
+            System.out.println("[DPWMapper] Already processing workspace preparation");
+            return;
+        }
+        
+        System.out.println("[DPWMapper] Starting workspace preparation...");
+        
         GuiHelper.runInEDT(() -> {
-            try {
-                System.out.println("DPW Mapper: Attempting to apply clean slate filter...");
-                
-                // Check if map and filter dialog exist
-                if (MainApplication.getMap() == null) {
-                    System.err.println("DPW Mapper: Map is null, cannot apply filter");
-                    return;
+            // Create progress dialog
+            JDialog progressDialog = new JDialog((Frame) null, "DPW Mapper - Preparing Workspace", false);
+            JPanel panel = new JPanel();
+            panel.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            
+            JLabel titleLabel = new JLabel("🔄 Preparing Clean Slate Workspace");
+            titleLabel.setFont(titleLabel.getFont().deriveFont(16f));
+            titleLabel.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+            
+            JLabel statusLabel = new JLabel(String.format("Found %d buildings in downloaded data", buildingCount));
+            statusLabel.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+            
+            JLabel actionLabel = new JLabel("Hiding existing OSM data...");
+            actionLabel.setAlignmentX(JLabel.CENTER_ALIGNMENT);
+            
+            JProgressBar progressBar = new JProgressBar();
+            progressBar.setIndeterminate(true);
+            progressBar.setAlignmentX(JProgressBar.CENTER_ALIGNMENT);
+            
+            panel.add(titleLabel);
+            panel.add(Box.createVerticalStrut(15));
+            panel.add(statusLabel);
+            panel.add(Box.createVerticalStrut(10));
+            panel.add(actionLabel);
+            panel.add(Box.createVerticalStrut(15));
+            panel.add(progressBar);
+            
+            progressDialog.add(panel);
+            progressDialog.pack();
+            progressDialog.setLocationRelativeTo(MainApplication.getMainFrame());
+            progressDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+            progressDialog.setVisible(true);
+            
+            // Apply filter in background
+            SwingWorker<Boolean, Void> worker = new SwingWorker<Boolean, Void>() {
+                @Override
+                protected Boolean doInBackground() throws Exception {
+                    Thread.sleep(500); // Brief delay to show the dialog
+                    return applyCleanSlateFilter(layer);
                 }
                 
-                if (MainApplication.getMap().filterDialog == null) {
-                    System.err.println("DPW Mapper: Filter dialog is null, cannot apply filter");
-                    return;
-                }
-                
-                // Get or create the filter table model
-                org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = MainApplication.getMap().filterDialog.getFilterModel();
-                
-                if (filterModel == null) {
-                    System.err.println("DPW Mapper: Filter model is null");
-                    return;
-                }
-                
-                System.out.println("DPW Mapper: Filter model found with " + filterModel.getRowCount() + " filters");
-                
-                // Check if our filter already exists
-                boolean filterExists = false;
-                for (int i = 0; i < filterModel.getRowCount(); i++) {
-                    org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
-                    if (filter != null && FILTER_TEXT.equals(filter.text)) {
-                        // Filter exists, just enable it
-                        System.out.println("DPW Mapper: Filter already exists, enabling it");
-                        filter.enable = true;
-                        filter.hiding = true;
-                        filterExists = true;
-                        break;
+                @Override
+                protected void done() {
+                    progressDialog.dispose();
+                    
+                    try {
+                        if (get()) {
+                            System.out.println("[DPWMapper] Workspace preparation complete");
+                            
+                            new Notification("✓ Clean Slate Ready!\n\n" +
+                                    String.format("Loaded %d buildings - existing data hidden.\n", buildingCount) +
+                                    "Trace new buildings freely!\n" +
+                                    "Use 'Merge & Fix' when done.")
+                                .setIcon(JOptionPane.INFORMATION_MESSAGE)
+                                .setDuration(Notification.TIME_LONG)
+                                .show();
+                        } else {
+                            System.out.println("[DPWMapper] Filter application failed");
+                            
+                            new Notification("⚠ Could not activate Clean Slate filter.\n" +
+                                    "You may need to manually hide existing data.")
+                                .setIcon(JOptionPane.WARNING_MESSAGE)
+                                .setDuration(Notification.TIME_DEFAULT)
+                                .show();
+                        }
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        new Notification("Error preparing workspace: " + ex.getMessage())
+                            .setIcon(JOptionPane.ERROR_MESSAGE)
+                            .show();
+                    } finally {
+                        isProcessing.set(false);
                     }
                 }
-                
-                // If filter doesn't exist, create it
-                if (!filterExists) {
-                    System.out.println("DPW Mapper: Creating new filter: " + FILTER_TEXT);
-                    org.openstreetmap.josm.data.osm.Filter newFilter = new org.openstreetmap.josm.data.osm.Filter();
-                    newFilter.text = FILTER_TEXT;
-                    newFilter.hiding = true;  // Hide matching objects
-                    newFilter.enable = true;   // Enable the filter
-                    newFilter.inverted = false;
-                    
-                    filterModel.addFilter(newFilter);
-                    System.out.println("DPW Mapper: Filter added to model");
-                }
-                
-                // Execute the filter
-                filterModel.executeFilters();
-                System.out.println("DPW Mapper: Filters executed successfully");
-                
-                // Notify the user
-                new Notification(NOTIFICATION_MESSAGE)
-                    .setIcon(JOptionPane.INFORMATION_MESSAGE)
-                    .setDuration(Notification.TIME_SHORT)
-                    .show();
-                    
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                new Notification("Failed to apply Clean Slate filter: " + ex.getMessage())
-                    .setIcon(JOptionPane.ERROR_MESSAGE)
-                    .show();
-            }
+            };
+            
+            worker.execute();
         });
+    }
+    
+    /**
+     * Apply the clean slate filter to hide existing OSM data.
+     * Returns true if successful, false otherwise.
+     */
+    private boolean applyCleanSlateFilter(OsmDataLayer layer) {
+        System.out.println("[DPWMapper] Starting applyCleanSlateFilter...");
+        
+        try {
+            if (MainApplication.getMap() == null) {
+                System.out.println("[DPWMapper] ERROR: MainApplication.getMap() is null");
+                return false;
+            }
+            
+            if (MainApplication.getMap().filterDialog == null) {
+                System.out.println("[DPWMapper] ERROR: filterDialog is null");
+                return false;
+            }
+            
+            org.openstreetmap.josm.gui.dialogs.FilterTableModel filterModel = 
+                MainApplication.getMap().filterDialog.getFilterModel();
+            System.out.println("[DPWMapper] Got FilterTableModel: " + filterModel);
+            
+            // Check if filter already exists
+            boolean filterExists = false;
+            for (int i = 0; i < filterModel.getRowCount(); i++) {
+                org.openstreetmap.josm.data.osm.Filter existingFilter = filterModel.getValue(i);
+                if (existingFilter != null && FILTER_TEXT.equals(existingFilter.text)) {
+                    System.out.println("[DPWMapper] Filter already exists at index " + i);
+                    filterExists = true;
+                    existingFilter.enable = true;
+                    existingFilter.hiding = true;
+                    break;
+                }
+            }
+            
+            if (!filterExists) {
+                System.out.println("[DPWMapper] Creating new filter with text: " + FILTER_TEXT);
+                
+                // Create new filter
+                org.openstreetmap.josm.data.osm.Filter filter = 
+                    new org.openstreetmap.josm.data.osm.Filter();
+                filter.text = FILTER_TEXT;
+                filter.hiding = true;
+                filter.enable = true;
+                filter.inverted = false;
+                
+                System.out.println("[DPWMapper] Filter created: text=" + filter.text + 
+                    ", hiding=" + filter.hiding + ", enable=" + filter.enable);
+                
+                // Add to filter model
+                filterModel.addFilter(filter);
+                System.out.println("[DPWMapper] Filter added to model");
+            }
+            
+            // Execute the filters to apply them
+            System.out.println("[DPWMapper] Executing filters...");
+            filterModel.executeFilters();
+            System.out.println("[DPWMapper] Filters executed successfully");
+            
+            return true;
+            
+        } catch (Exception ex) {
+            System.out.println("[DPWMapper] ERROR in applyCleanSlateFilter: " + ex.getMessage());
+            ex.printStackTrace();
+            return false;
+        }
     }
     
     @Override
@@ -132,6 +226,7 @@ public class AutoHideListener implements LayerChangeListener, DataSetListener {
         if (e.getRemovedLayer() instanceof OsmDataLayer) {
             OsmDataLayer dataLayer = (OsmDataLayer) e.getRemovedLayer();
             dataLayer.getDataSet().removeDataSetListener(this);
+            System.out.println("[DPWMapper] Layer removed: " + dataLayer.getName());
         }
     }
     
