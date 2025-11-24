@@ -234,7 +234,7 @@ public class MergeAndFixAction extends JosmAction {
             
             for (int i = 0; i < filterModel.getRowCount(); i++) {
                 org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
-                if (filter != null && "id:1-".equals(filter.text)) {
+                if (filter != null && "-new".equals(filter.text)) {
                     filter.enable = false;
                     filterModel.executeFilters();
                     break;
@@ -254,7 +254,7 @@ public class MergeAndFixAction extends JosmAction {
             
             for (int i = 0; i < filterModel.getRowCount(); i++) {
                 org.openstreetmap.josm.data.osm.Filter filter = filterModel.getValue(i);
-                if (filter != null && "id:1-".equals(filter.text)) {
+                if (filter != null && "-new".equals(filter.text)) {
                     filter.enable = true;
                     filterModel.executeFilters();
                     break;
